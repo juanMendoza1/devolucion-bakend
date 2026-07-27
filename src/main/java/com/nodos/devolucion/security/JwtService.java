@@ -86,7 +86,8 @@ public class JwtService {
     // =========================================================
 
     private SecretKey getSignInKey() {
-        // Decodificamos la clave en Base64 que pusimos en el properties
+        // Restauramos la decodificación Base64. Es el estándar recomendado
+        // para garantizar que la clave tenga el tamaño y formato correcto (256 bits).
         byte[] keyBytes = Decoders.BASE64.decode(secretKey);
         return Keys.hmacShaKeyFor(keyBytes);
     }
