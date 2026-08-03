@@ -39,4 +39,6 @@ public interface DevolTarifasRepository extends JpaRepository<DevolTarifas, Long
     
     @Query("SELECT t.id FROM DevolTarifas t WHERE t.jobId = :jobId AND t.mes = :mes AND t.anio = :anio")
     List<Long> findIdsByLote(String jobId, Integer mes, Integer anio);
+    
+    List<DevolTarifas> findByJobId(String jobId);
 }

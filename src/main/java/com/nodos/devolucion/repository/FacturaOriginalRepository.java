@@ -1,9 +1,14 @@
 package com.nodos.devolucion.repository;
 
 import com.nodos.devolucion.entity.FacturaOriginal;
+
+import java.util.List;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -17,4 +22,7 @@ public interface FacturaOriginalRepository extends JpaRepository<FacturaOriginal
 
     // 3. Buscar por código de usuario (Dataease)
     Page<FacturaOriginal> findByCodigoDataeaseContainingIgnoreCase(String codigoDataease, Pageable pageable);
+    
+    @Query("SELECT f FROM FacturaOriginal f WHERE CONCAT(f.ano, '-', f.mes) IN :periodos")
+    List<FacturaOriginal> buscarPorPeriodos(@Param("periodos") List<String> periodos);
 }
