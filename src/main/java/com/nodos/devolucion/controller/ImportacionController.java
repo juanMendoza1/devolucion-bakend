@@ -6,6 +6,9 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -13,7 +16,6 @@ import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/importaciones")
-@CrossOrigin(origins = "*")
 public class ImportacionController {
 
     private final List<CsvImportStrategy> strategies;
@@ -28,7 +30,9 @@ public class ImportacionController {
     public ResponseEntity<?> importarArchivo(
             @PathVariable String tipoArchivo, 
             @RequestParam("file") MultipartFile file,
-            @RequestParam("usuIdRegistro") String usuIdRegistro) { // <--- Nuevo parámetro
+            @RequestParam("usuIdRegistro") String usuIdRegistro,
+            @RequestParam(value = "novedad", required = false) String novedad,
+            @RequestParam(value = "version", required = false) String version) {
         
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "El archivo está vacío."));
@@ -45,16 +49,32 @@ public class ImportacionController {
 
         String jobId = UUID.randomUUID().toString();
 
+        // 1. CREAR ARCHIVO TEMPORAL PROPIO (En el hilo principal)
+        File tempFile;
+        try {
+            Path tempPath = Files.createTempFile("import_" + jobId, ".csv");
+            tempFile = tempPath.toFile();
+            file.transferTo(tempFile); // Transferimos los bytes antes de que Tomcat borre el original
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Error al procesar el archivo temporal: " + e.getMessage()));
+        }
+
+        // 2. PROCESAMIENTO ASÍNCRONO
         CompletableFuture.runAsync(() -> {
             try {
-                // Pasamos el usuario a la estrategia
-                strategy.procesarArchivo(file, jobId, usuIdRegistro); 
+                // Pasamos nuestro tempFile en lugar del MultipartFile
+                strategy.procesarArchivo(tempFile, jobId, usuIdRegistro, novedad, version); 
             } catch (Exception e) {
                 messagingTemplate.convertAndSend(
                     "/topic/import-progress/" + jobId, 
                     Map.of("porcentaje", 0, "mensaje", "ERROR CRÍTICO: " + e.getMessage())
                 );
                 e.printStackTrace();
+            } finally {
+                // 3. LIMPIEZA OBLIGATORIA (Se ejecuta falle o sea exitoso)
+                if (tempFile.exists()) {
+                    tempFile.delete();
+                }
             }
         });
 

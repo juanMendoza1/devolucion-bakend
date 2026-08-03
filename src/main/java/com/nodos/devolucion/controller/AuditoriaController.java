@@ -10,7 +10,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/auditoria")
-@CrossOrigin(origins = "*") // Recuerda ajustar esto en producción según tu dominio de React
 public class AuditoriaController {
 
     private final AuditoriaImportacionRepository auditoriaRepository;

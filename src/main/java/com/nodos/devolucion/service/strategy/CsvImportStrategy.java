@@ -1,10 +1,10 @@
 package com.nodos.devolucion.service.strategy;
 
-import org.springframework.web.multipart.MultipartFile;
+import java.io.File; // <--- Importante
 
 public interface CsvImportStrategy {
     String getTipoArchivo();
     
-    // Agregamos el parámetro usuIdRegistro
-    void procesarArchivo(MultipartFile file, String jobId, String usuIdRegistro) throws Exception; 
+    // Cambiamos MultipartFile por File
+    void procesarArchivo(File file, String jobId, String usuIdRegistro, String novedad, String version) throws Exception; 
 }

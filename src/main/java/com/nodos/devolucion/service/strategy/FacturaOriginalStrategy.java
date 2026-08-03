@@ -10,6 +10,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.math.BigDecimal;
@@ -51,12 +53,12 @@ public class FacturaOriginalStrategy implements CsvImportStrategy {
     }
 
     @Override
-    public void procesarArchivo(MultipartFile file, String jobId, String usuIdRegistro) throws Exception {
+    public void procesarArchivo(File file, String jobId, String usuIdRegistro, String novedad, String version) throws Exception {
         
         // 1. REGISTRO INICIAL DE AUDITORÍA
         AuditoriaImportacion auditoria = AuditoriaImportacion.builder()
                 .jobId(jobId)
-                .nombreArchivo(file.getOriginalFilename())
+                .nombreArchivo(file.getName()) // <--- CAMBIO 1: Usar getName()
                 .usuIdRegistro(usuIdRegistro) // Guardamos quién hizo la importación
                 .fechaInicio(LocalDateTime.now())
                 .estado("EN_PROCESO")
@@ -66,7 +68,8 @@ public class FacturaOriginalStrategy implements CsvImportStrategy {
         List<FacturaOriginal> loteFacturas = new ArrayList<>();
         int totalLineasProcesadas = 0;
 
-        try (Reader reader = new InputStreamReader(file.getInputStream());
+        // <--- CAMBIO 2: Usar FileInputStream
+        try (Reader reader = new InputStreamReader(new FileInputStream(file));
              CSVReader csvReader = new CSVReaderBuilder(reader).build()) {
 
             // 2. VALIDACIÓN DE ENCABEZADOS
@@ -224,4 +227,5 @@ public class FacturaOriginalStrategy implements CsvImportStrategy {
         
         return LocalDate.parse(cleanVal, DateTimeFormatter.ofPattern("yyyy-MM-dd"));
     }
+
 }

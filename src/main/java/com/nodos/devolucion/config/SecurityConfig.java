@@ -37,7 +37,8 @@ public class SecurityConfig {
             // Configuramos los permisos de las rutas
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/ws-import/**").permitAll() // Importante: Permitir el handshake del WebSocket
+                .requestMatchers("/ws-import/**").permitAll() 
+                .requestMatchers("/api/tarifas/**").permitAll()
                 .anyRequest().authenticated()
             )
             
