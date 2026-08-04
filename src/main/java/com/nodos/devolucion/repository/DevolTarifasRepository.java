@@ -41,4 +41,7 @@ public interface DevolTarifasRepository extends JpaRepository<DevolTarifas, Long
     List<Long> findIdsByLote(String jobId, Integer mes, Integer anio);
     
     List<DevolTarifas> findByJobId(String jobId);
+    
+    @Query("SELECT DISTINCT d.concepto FROM DevolTarifas d WHERE d.concepto IS NOT NULL")
+    List<String> findDistinctConceptos();
 }

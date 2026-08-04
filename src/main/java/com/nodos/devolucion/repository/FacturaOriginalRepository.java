@@ -25,4 +25,8 @@ public interface FacturaOriginalRepository extends JpaRepository<FacturaOriginal
     
     @Query("SELECT f FROM FacturaOriginal f WHERE CONCAT(f.ano, '-', f.mes) IN :periodos")
     List<FacturaOriginal> buscarPorPeriodos(@Param("periodos") List<String> periodos);
+    
+    @Query("SELECT DISTINCT f.jobId FROM FacturaOriginal f WHERE f.jobId IS NOT NULL")
+    List<String> findDistinctJobIds();
+    
 }

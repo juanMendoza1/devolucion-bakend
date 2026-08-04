@@ -1,7 +1,10 @@
 package com.nodos.devolucion.service;
 
+import com.nodos.devolucion.dto.ParametrosConfigDTO;
 import com.nodos.devolucion.dto.ReliquidacionRequestDTO;
 import com.nodos.devolucion.entity.Reliquidacion;
+import com.nodos.devolucion.repository.DevolTarifasRepository;
+import com.nodos.devolucion.repository.FacturaOriginalRepository;
 import com.nodos.devolucion.repository.ReliquidacionRepository;
 import com.nodos.devolucion.strategy.MotorReliquidacionFactory;
 import com.nodos.devolucion.strategy.ReliquidacionConceptoStrategy;
@@ -19,6 +22,10 @@ public class ReliquidacionOrchestratorService {
 
     private final MotorReliquidacionFactory motorFactory;
     private final ReliquidacionRepository reliquidacionRepository;
+    
+    // 👇 Nuevas dependencias inyectadas automáticamente por @RequiredArgsConstructor
+    private final FacturaOriginalRepository facturaOriginalRepository;
+    private final DevolTarifasRepository devolTarifasRepository;
 
     @Transactional // Garantiza que si falla la base de datos, no se guarde nada a medias
     public List<Reliquidacion> procesarReliquidacion(ReliquidacionRequestDTO request) {
@@ -52,5 +59,27 @@ public class ReliquidacionOrchestratorService {
         }
 
         return resultados;
+    }
+
+    // 👇 NUEVO MÉTODO: Alimenta los menús desplegables del frontend
+    public ParametrosConfigDTO obtenerParametrosConfiguracion() {
+        ParametrosConfigDTO config = new ParametrosConfigDTO();
+
+        // 1. Obtener Lotes dinámicos y mapearlos
+        List<String> jobIds = facturaOriginalRepository.findDistinctJobIds();
+        List<ParametrosConfigDTO.LoteInfo> lotesInfo = jobIds.stream()
+                .map(jobId -> new ParametrosConfigDTO.LoteInfo(jobId, "Lote de Facturación"))
+                .toList();
+        config.setLotes(lotesInfo);
+
+        // 2. Obtener Conceptos dinámicos desde la tabla de tarifas
+        List<String> conceptos = devolTarifasRepository.findDistinctConceptos();
+        // Si la tabla está vacía, enviamos unos por defecto por seguridad
+        config.setConceptos(conceptos.isEmpty() ? List.of("TA", "TRT") : conceptos); 
+
+        // 3. Tipos de Interés
+        config.setTiposInteres(List.of("NINGUNO", "SIMPLE", "COMPUESTO"));
+
+        return config;
     }
 }

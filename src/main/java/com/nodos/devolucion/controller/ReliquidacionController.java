@@ -1,5 +1,6 @@
 package com.nodos.devolucion.controller;
 
+import com.nodos.devolucion.dto.ParametrosConfigDTO;
 import com.nodos.devolucion.dto.ReliquidacionRequestDTO;
 import com.nodos.devolucion.entity.Reliquidacion;
 import com.nodos.devolucion.service.ReliquidacionOrchestratorService;
@@ -32,5 +33,11 @@ public class ReliquidacionController {
             // Si algo explota (ej: base de datos caída), devolvemos error 500
             return ResponseEntity.internalServerError().build();
         }
+    }
+    
+    @GetMapping("/parametros")
+    public ResponseEntity<ParametrosConfigDTO> getParametros() {
+        ParametrosConfigDTO parametros = orquestadorService.obtenerParametrosConfiguracion();
+        return ResponseEntity.ok(parametros);
     }
 }
