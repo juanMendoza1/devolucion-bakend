@@ -10,30 +10,23 @@ import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
 @Service
-public class DevolTarifasStrategy implements CsvImportStrategy {
+public class DevolTarifasStrategy extends AbstractCsvImportStrategy {
 
     private final DevolTarifasRepository repository;
-    private final AuditoriaImportacionRepository auditoriaRepository;
-    private final SimpMessagingTemplate messagingTemplate;
     private final VersionTarifaRepository versionTarifaRepository;
-
     private static final int BATCH_SIZE = 2000;
 
-    // Los mismos encabezados exactos que configuraste en el React
     private final String[] EXPECTED_HEADERS = {
         "mes", "anio", "estrato", "concepto", "aplicado", 
         "ajustado", "devolucion", "porsubcon", "subcon", 
@@ -41,25 +34,23 @@ public class DevolTarifasStrategy implements CsvImportStrategy {
     };
 
     public DevolTarifasStrategy(DevolTarifasRepository repository, 
-            AuditoriaImportacionRepository auditoriaRepository,
-            SimpMessagingTemplate messagingTemplate,
-            VersionTarifaRepository versionTarifaRepository) {
+                                AuditoriaImportacionRepository auditoriaRepository,
+                                SimpMessagingTemplate messagingTemplate,
+                                VersionTarifaRepository versionTarifaRepository) {
+        super(auditoriaRepository, messagingTemplate);
         this.repository = repository;
-        this.auditoriaRepository = auditoriaRepository;
-        this.messagingTemplate = messagingTemplate;
         this.versionTarifaRepository = versionTarifaRepository;
     }
 
     @Override
     public String getTipoArchivo() {
-        // Esta llave conecta dinámicamente con la solicitud del frontend
         return "BASE_TARIFAS";
     }
 
     @Override
     public void procesarArchivo(File file, String jobId, String usuIdRegistro, String novedad, String version) throws Exception {
         
-    	VersionTarifa cabecera = VersionTarifa.builder()
+        VersionTarifa cabecera = VersionTarifa.builder()
                 .jobId(jobId)
                 .novedad(novedad != null ? novedad : "Sin novedad")
                 .version(version != null ? version : "1.0")
@@ -67,145 +58,65 @@ public class DevolTarifasStrategy implements CsvImportStrategy {
                 .estado("ACTIVA")
                 .build();
         versionTarifaRepository.save(cabecera);
-    	
-        // 1. REGISTRO INICIAL DE AUDITORÍA
-        AuditoriaImportacion auditoria = AuditoriaImportacion.builder()
-                .jobId(jobId)
-                .nombreArchivo(file.getName()) // <--- CAMBIO: Usar getName() en lugar de getOriginalFilename()
-                .usuIdRegistro(usuIdRegistro)
-                .fechaInicio(LocalDateTime.now())
-                .estado("EN_PROCESO")
-                .build();
-        auditoriaRepository.save(auditoria);
-
+        
+        AuditoriaImportacion auditoria = crearAuditoriaInicial(file, jobId, usuIdRegistro);
         List<DevolTarifas> loteTarifas = new ArrayList<>();
         int totalLineasProcesadas = 0;
 
-        // <--- CAMBIO: Usar FileInputStream para leer el java.io.File
         try (Reader reader = new InputStreamReader(new FileInputStream(file));
              CSVReader csvReader = new CSVReaderBuilder(reader).build()) {
 
-            // 2. VALIDACIÓN DE ENCABEZADOS
             String[] headers = csvReader.readNext();
-            if (headers == null || headers.length == 0) {
-                enviarErrorYDetener(jobId, "El archivo está vacío o no tiene encabezados.");
-            }
+            Map<String, Integer> headerMap = construirMapaEncabezados(headers, EXPECTED_HEADERS, jobId);
 
-            for (int i = 0; i < headers.length; i++) {
-                headers[i] = headers[i].trim().toLowerCase();
-            }
-
-            List<String> expectedList = Arrays.asList(EXPECTED_HEADERS);
-            List<String> actualList = Arrays.asList(headers);
-            List<String> columnasFaltantes = new ArrayList<>();
-
-            for (String expected : expectedList) {
-                if (!actualList.contains(expected)) {
-                    columnasFaltantes.add(expected);
-                }
-            }
-
-            if (!columnasFaltantes.isEmpty()) {
-                enviarErrorYDetener(jobId, "Faltan las siguientes columnas: " + String.join(", ", columnasFaltantes));
-            }
-
-            if (!Arrays.equals(headers, EXPECTED_HEADERS)) {
-                enviarErrorYDetener(jobId, "Las columnas están presentes pero no respetan el orden exacto de la plantilla.");
-            }
-
-            // 3. PROCESAMIENTO Y GUARDADO POR BATCH
             String[] linea;
-            enviarProgreso(jobId, 5, "Iniciando lectura e inserción de datos...");
+            enviarProgreso(jobId, 5, "Iniciando lectura e inserción dinámica de tarifas...");
 
             while ((linea = csvReader.readNext()) != null) {
-                if (linea.length < 12) continue; // Número de columnas esperado
+                if (linea.length == 0 || (linea.length == 1 && linea[0].isBlank())) continue;
 
                 try {
                     DevolTarifas tarifa = DevolTarifas.builder()
-                            .mes(parseInteger(linea[0]))
-                            .anio(parseInteger(linea[1]))
-                            .estrato(linea[2].trim())
-                            .concepto(linea[3].trim())
-                            .aplicado(parseBigDecimal(linea[4]))
-                            .ajustado(parseBigDecimal(linea[5]))
-                            .devolucion(parseBigDecimal(linea[6]))
-                            .porsubcon(parseBigDecimal(linea[7]))
-                            .subcon(parseBigDecimal(linea[8]))
-                            .devolucionAplicar(parseBigDecimal(linea[9]))
-                            .liquidacion(linea[10].trim())
-                            .esp(parseInteger(linea[11]))
-                            .jobId(jobId) // VINCULACIÓN
+                            .mes(parseInteger(getValor(linea, headerMap, "mes")))
+                            .anio(parseInteger(getValor(linea, headerMap, "anio")))
+                            .estrato(getValor(linea, headerMap, "estrato"))
+                            .concepto(getValor(linea, headerMap, "concepto"))
+                            .aplicado(parseBigDecimal(getValor(linea, headerMap, "aplicado")))
+                            .ajustado(parseBigDecimal(getValor(linea, headerMap, "ajustado")))
+                            .devolucion(parseBigDecimal(getValor(linea, headerMap, "devolucion")))
+                            .porsubcon(parseBigDecimal(getValor(linea, headerMap, "porsubcon")))
+                            .subcon(parseBigDecimal(getValor(linea, headerMap, "subcon")))
+                            .devolucionAplicar(parseBigDecimal(getValor(linea, headerMap, "devolucion_aplicar")))
+                            .liquidacion(getValor(linea, headerMap, "liquidacion"))
+                            .esp(parseInteger(getValor(linea, headerMap, "esp")))
+                            .jobId(jobId)
                             .build();
 
                     loteTarifas.add(tarifa);
                     totalLineasProcesadas++;
 
-                    // Guardado por lotes cada 2000 registros
                     if (loteTarifas.size() >= BATCH_SIZE) {
                         repository.saveAllAndFlush(loteTarifas);
                         loteTarifas.clear(); 
                         enviarProgreso(jobId, -1, "Insertados " + totalLineasProcesadas + " registros de Tarifas...");
                     }
 
-                } catch (NumberFormatException e) {
-                    int lineaRealExcel = totalLineasProcesadas + 2; 
-                    enviarErrorYDetener(jobId, "Error de formato numérico en la fila " + lineaRealExcel + " del CSV. Detalle: " + e.getMessage());
                 } catch (Exception e) {
                     int lineaRealExcel = totalLineasProcesadas + 2;
                     enviarErrorYDetener(jobId, "Error en la fila " + lineaRealExcel + ". Detalle: " + e.getMessage());
                 }
             }
 
-            // Guardar el último lote sobrante
             if (!loteTarifas.isEmpty()) {
                 repository.saveAllAndFlush(loteTarifas);
                 loteTarifas.clear();
             }
 
-            // 4. FINALIZACIÓN
-            auditoria.setFechaFin(LocalDateTime.now());
-            auditoria.setTotalRegistros(totalLineasProcesadas);
-            auditoria.setEstado("COMPLETADO");
-            auditoriaRepository.save(auditoria);
-
-            enviarProgreso(jobId, 100, "Cargue de Tarifas completado. Total registros: " + totalLineasProcesadas);
+            registrarExitoAuditoria(auditoria, totalLineasProcesadas, "Cargue de Tarifas completado. Total registros: " + totalLineasProcesadas);
 
         } catch (Exception e) {
-            // 5. REGISTRO DE ERROR
-            auditoria.setFechaFin(LocalDateTime.now());
-            auditoria.setEstado("ERROR");
-            auditoria.setTotalRegistros(totalLineasProcesadas);
-            auditoria.setMensajeError(e.getMessage());
-            auditoriaRepository.save(auditoria);
-            
+            registrarErrorAuditoria(auditoria, totalLineasProcesadas, e.getMessage());
             throw e; 
         }
-    }
-
-    private void enviarErrorYDetener(String jobId, String detalleError) {
-        String mensajeCompleto = "ERROR: " + detalleError;
-        enviarProgreso(jobId, 0, mensajeCompleto);
-        throw new IllegalArgumentException(mensajeCompleto);
-    }
-
-    private void enviarProgreso(String jobId, int porcentaje, String mensaje) {
-        messagingTemplate.convertAndSend("/topic/import-progress/" + jobId, 
-            Map.of("porcentaje", porcentaje, "mensaje", mensaje)
-        );
-    }
-
-    // --- UTILS (Iguales a tu otra estrategia) ---
-    private Integer parseInteger(String val) {
-        if (val == null || val.trim().isEmpty()) return null;
-        String cleanVal = val.trim().toUpperCase();
-        if (cleanVal.equals("NULL") || cleanVal.equals("N/A") || cleanVal.equals("NAN")) return null;
-        return Integer.parseInt(val.trim());
-    }
-
-    private BigDecimal parseBigDecimal(String val) {
-        if (val == null || val.trim().isEmpty()) return null;
-        String cleanVal = val.trim().toUpperCase();
-        if (cleanVal.equals("NULL") || cleanVal.equals("N/A") || cleanVal.equals("NAN")) return null;
-        return new BigDecimal(val.trim());
     }
 }

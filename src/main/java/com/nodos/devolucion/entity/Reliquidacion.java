@@ -18,7 +18,9 @@ public class Reliquidacion {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // --- ADN del Origen ---
+    @Column(name = "consolidado_tarifas", length = 100)
+    private String consolidadoTarifas;
+    
     @Column(name = "job_id", nullable = false)
     private String jobId; // Ej: Lote de Febrero 2026
 
