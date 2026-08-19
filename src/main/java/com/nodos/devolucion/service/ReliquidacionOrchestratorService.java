@@ -12,10 +12,12 @@ import com.nodos.devolucion.strategy.MotorReliquidacionFactory;
 import com.nodos.devolucion.strategy.ReliquidacionConceptoStrategy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.simp.SimpMessagingTemplate; // <-- IMPORTANTE PARA LOS WEBSOCKETS
+import org.springframework.scheduling.annotation.Async; // <-- IMPORTANTE PARA LOS HILOS
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -27,8 +29,10 @@ public class ReliquidacionOrchestratorService {
     private final VersionTarifaRepository versionTarifaRepository;
     private final FacturaOriginalRepository facturaOriginalRepository;
     private final DevolTarifasRepository devolTarifasRepository;
+    
+    // Inyectamos el componente para enviar mensajes a React cuando haya errores en el hilo asíncrono
+    private final SimpMessagingTemplate messagingTemplate;
 
-    @Transactional // Garantiza que si hay un fallo crítico, se haga rollback completo
     public List<Reliquidacion> procesarReliquidacion(ReliquidacionRequestDTO request) {
         
         log.info("Iniciando orquestación. Consolidado: {}, Lotes Seleccionados: {}, Concepto: {}, Demo: {}", 
@@ -38,15 +42,15 @@ public class ReliquidacionOrchestratorService {
         ReliquidacionConceptoStrategy estrategia = motorFactory.obtenerEstrategia(request.getConcepto());
 
         // 2. Limpieza previa EN PRODUCCIÓN
-        // Si el usuario reprocesa la misma campaña, borramos lo viejo antes de recalcular
         if (!request.isEsDemo()) {
             log.info("Modo Producción: Limpiando cálculos anteriores para el consolidado '{}'...", request.getConsolidadoTarifas());
+            // Como ya no hay burbuja global, Spring Data hará un COMMIT inmediato de este borrado
             reliquidacionRepository.deleteByConsolidadoTarifasAndConcepto(request.getConsolidadoTarifas(), request.getConcepto());
         }
 
         // 3. Ejecutamos la lógica del motor
-        // OJO: Si es Producción, la estrategia misma irá guardando por lotes y retornará una lista vacía.
-        // Si es Demo, la estrategia calculará todo en RAM, NO guardará en BD y retornará la lista para previsualizar.
+        // Ahora, cada vez que la estrategia haga saveAllAndFlush(1000), 
+        // hará un COMMIT inmediato y podrás verlos en tu base de datos al instante.
         List<Reliquidacion> resultados = estrategia.calcularDevolucion(
                 request.getConsolidadoTarifas(),
                 request.getJobIds(),
@@ -55,7 +59,6 @@ public class ReliquidacionOrchestratorService {
                 request.getPeriodosOrdenados()
         );
 
-        // 4. Registro final de auditoría en consola
         if (request.isEsDemo()) {
             log.info("Modo Demo completado. Se retornan {} registros calculados en RAM.", resultados.size());
         } else {
@@ -63,6 +66,22 @@ public class ReliquidacionOrchestratorService {
         }
 
         return resultados;
+    }
+
+    // 🔥 NUEVO MÉTODO PARA HILOS INDEPENDIENTES 🔥
+    @Async
+    public void procesarReliquidacionAsync(ReliquidacionRequestDTO request) {
+        log.info("Iniciando hilo en segundo plano para el consolidado: {}", request.getConsolidadoTarifas());
+        try {
+            // Llama a tu proceso normal, pero ahora corre en un universo paralelo
+            procesarReliquidacion(request);
+        } catch (Exception e) {
+            log.error("Error en el hilo de procesamiento de {}", request.getConsolidadoTarifas(), e);
+            // Avisamos al frontend que el proceso falló
+            messagingTemplate.convertAndSend("/topic/reliquidacion-progress/" + request.getConsolidadoTarifas(), 
+                Map.of("porcentaje", 0, "mensaje", "ERROR CRÍTICO: " + e.getMessage())
+            );
+        }
     }
 
     public ParametrosConfigDTO obtenerParametrosConfiguracion() {

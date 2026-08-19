@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map; // <-- Importante agregar esto
 
 @RestController
 @RequestMapping("/api/reliquidaciones")
@@ -20,12 +21,20 @@ public class ReliquidacionController {
     private final ReliquidacionRepository repository; // Inyectado para inspección parcial
 
     @PostMapping("/calcular")
-    public ResponseEntity<List<Reliquidacion>> calcular(@RequestBody ReliquidacionRequestDTO request) {
+    public ResponseEntity<?> calcular(@RequestBody ReliquidacionRequestDTO request) {
         try {
-            List<Reliquidacion> calculoFinanciero = orquestadorService.procesarReliquidacion(request);
-            return ResponseEntity.ok(calculoFinanciero);
+            if (request.isEsDemo()) {
+                // MODO DEMO: Rápido, en memoria. El navegador espera la respuesta con los datos.
+                List<Reliquidacion> calculoFinanciero = orquestadorService.procesarReliquidacion(request);
+                return ResponseEntity.ok(calculoFinanciero);
+            } else {
+                // MODO PRODUCCIÓN: Hilo en segundo plano. El navegador se libera al instante.
+                orquestadorService.procesarReliquidacionAsync(request);
+                // Retornamos HTTP 202 (Accepted) para indicar que recibimos la orden y ya estamos trabajando en ello
+                return ResponseEntity.accepted().body(Map.of("mensaje", "Proceso encolado en segundo plano."));
+            }
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
