@@ -6,14 +6,18 @@ import com.nodos.devolucion.entity.Reliquidacion;
 import com.nodos.devolucion.entity.TasaInteres;
 import com.nodos.devolucion.repository.DevolTarifasRepository;
 import com.nodos.devolucion.repository.FacturaOriginalRepository;
-import com.nodos.devolucion.repository.ReliquidacionRepository;
 import com.nodos.devolucion.repository.TasaInteresRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,8 +33,10 @@ public class ReliquidacionTAStrategy implements ReliquidacionConceptoStrategy {
     private final FacturaOriginalRepository facturaRepository;
     private final DevolTarifasRepository tarifasRepository;
     private final TasaInteresRepository tasaInteresRepository;
-    private final ReliquidacionRepository reliquidacionRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    
+    // Inyectamos JdbcTemplate para el Bulk Insert de alto rendimiento
+    private final JdbcTemplate jdbcTemplate;
 
     private static final int BATCH_SIZE = 1000;
 
@@ -159,8 +165,8 @@ public class ReliquidacionTAStrategy implements ReliquidacionConceptoStrategy {
                                     .consolidadoTarifas(consolidadoTarifas)
                                     .jobId(currentJobId)
                                     .facturaOriginalId(facturaUsada.getId())
-                                    .factura(facturaUsada.getFactura()) // <-- Factura Real
-                                    .codigoDataease(facturaUsada.getCodigoDataease()) // <-- Dataease Real
+                                    .factura(facturaUsada.getFactura()) 
+                                    .codigoDataease(facturaUsada.getCodigoDataease()) 
                                     .aprovechador(tarifaAplicada.getAprovechador())
                                     .tarifaAplicada(tarifaAplicada)
                                     .concepto("TA")
@@ -168,13 +174,13 @@ public class ReliquidacionTAStrategy implements ReliquidacionConceptoStrategy {
                                     .anioBase(anoActual) 
                                     .desocupadoMesBase(estabaDesocupado)
                                     .tipoInteres(tipoInteres)
-                                    .valorBaseTarifa(capitalCongelado)    
+                                    .valorBaseTarifa(capitalCongelado)   
                                     .capitalReliquidado(capitalInicioMes) 
                                     .interesesCalculados(interesDelMes)   
                                     .totalDevolucion(capitalParaInteres)  
                                     .esDemo(esDemo)
                                     .fechaCalculo(LocalDateTime.now())
-                                    .detalleTasas(estadoTasa) // Estará vacío o tendrá solo la tasa
+                                    .detalleTasas(estadoTasa) 
                                     .build();
 
                             loteParaGuardar.add(reliquidacion);
@@ -186,8 +192,9 @@ public class ReliquidacionTAStrategy implements ReliquidacionConceptoStrategy {
                 procesados++;
 
                 if (!esDemo) {
+                    // AQUÍ ESTÁ EL CAMBIO CLAVE: Inserción Nativa Masiva
                     if (loteParaGuardar.size() >= BATCH_SIZE) {
-                        reliquidacionRepository.saveAllAndFlush(loteParaGuardar);
+                        insertarReliquidacionesEnBatch(loteParaGuardar);
                         loteParaGuardar.clear();
                     }
 
@@ -202,8 +209,10 @@ public class ReliquidacionTAStrategy implements ReliquidacionConceptoStrategy {
                 }
             }
 
+            // Guardar el remanente de registros que no alcanzó a sumar 1000
             if (!esDemo && !loteParaGuardar.isEmpty()) {
-                reliquidacionRepository.saveAllAndFlush(loteParaGuardar);
+                insertarReliquidacionesEnBatch(loteParaGuardar);
+                loteParaGuardar.clear();
             }
         }
 
@@ -215,5 +224,61 @@ public class ReliquidacionTAStrategy implements ReliquidacionConceptoStrategy {
         }
 
         return resultadosGlobales;
+    }
+
+    /**
+     * Método privado que ejecuta un Bulk Insert nativo usando JdbcTemplate.
+     * Esto ignora la memoria de JPA y envía los registros directamente a la BD de forma ultrarrápida.
+     */
+    private void insertarReliquidacionesEnBatch(List<Reliquidacion> lote) {
+        String sql = "INSERT INTO reliquidaciones (" +
+                "consolidado_tarifas, job_id, factura_original_id, factura, codigo_dataease, " +
+                "aprovechador_id, tarifa_aplicada_id, concepto, mes_base, anio_base, " +
+                "desocupado_mes_base, tipo_interes, valor_base_tarifa, capital_reliquidado, " +
+                "intereses_calculados, total_devolucion, es_demo, fecha_calculo, detalle_tasas) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+            @Override
+            public void setValues(PreparedStatement ps, int i) throws SQLException {
+                Reliquidacion r = lote.get(i);
+                ps.setString(1, r.getConsolidadoTarifas());
+                ps.setString(2, r.getJobId());
+                ps.setLong(3, r.getFacturaOriginalId());
+                ps.setString(4, r.getFactura());
+                ps.setString(5, r.getCodigoDataease());
+                
+                // Manejo cuidadoso de Foreign Keys (Aprovechador y Tarifa Aplicada)
+                if (r.getAprovechador() != null && r.getAprovechador().getId() != null) {
+                    ps.setLong(6, r.getAprovechador().getId());
+                } else {
+                    ps.setNull(6, java.sql.Types.BIGINT);
+                }
+                
+                if (r.getTarifaAplicada() != null && r.getTarifaAplicada().getId() != null) {
+                    ps.setLong(7, r.getTarifaAplicada().getId());
+                } else {
+                    ps.setNull(7, java.sql.Types.BIGINT);
+                }
+                
+                ps.setString(8, r.getConcepto());
+                ps.setInt(9, r.getMesBase());
+                ps.setInt(10, r.getAnioBase());
+                ps.setBoolean(11, r.getDesocupadoMesBase() != null ? r.getDesocupadoMesBase() : false);
+                ps.setString(12, r.getTipoInteres());
+                ps.setBigDecimal(13, r.getValorBaseTarifa());
+                ps.setBigDecimal(14, r.getCapitalReliquidado());
+                ps.setBigDecimal(15, r.getInteresesCalculados());
+                ps.setBigDecimal(16, r.getTotalDevolucion());
+                ps.setBoolean(17, r.getEsDemo() != null ? r.getEsDemo() : false);
+                ps.setTimestamp(18, Timestamp.valueOf(r.getFechaCalculo()));
+                ps.setString(19, r.getDetalleTasas());
+            }
+
+            @Override
+            public int getBatchSize() {
+                return lote.size();
+            }
+        });
     }
 }

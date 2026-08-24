@@ -22,21 +22,11 @@ public class ReliquidacionController {
 
     @PostMapping("/calcular")
     public ResponseEntity<?> calcular(@RequestBody ReliquidacionRequestDTO request) {
-        try {
-            if (request.isEsDemo()) {
-                // MODO DEMO: Rápido, en memoria. El navegador espera la respuesta con los datos.
-                List<Reliquidacion> calculoFinanciero = orquestadorService.procesarReliquidacion(request);
-                return ResponseEntity.ok(calculoFinanciero);
-            } else {
-                // MODO PRODUCCIÓN: Hilo en segundo plano. El navegador se libera al instante.
-                orquestadorService.procesarReliquidacionAsync(request);
-                // Retornamos HTTP 202 (Accepted) para indicar que recibimos la orden y ya estamos trabajando en ello
-                return ResponseEntity.accepted().body(Map.of("mensaje", "Proceso encolado en segundo plano."));
-            }
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+        if (request.isEsDemo()) {
+            return ResponseEntity.ok(orquestadorService.procesarReliquidacion(request));
+        } else {
+            orquestadorService.procesarReliquidacionAsync(request);
+            return ResponseEntity.accepted().body(Map.of("mensaje", "Proceso encolado en segundo plano."));
         }
     }
     

@@ -24,20 +24,13 @@ public class TarifaAsignacionController {
         return ResponseEntity.ok(asignacionService.obtenerAprovechadoresActivos());
     }
 
-    // Endpoint 2: Para recibir las asignaciones masivas
     @PostMapping("/asignar-aprovechador")
     public ResponseEntity<?> asignarAprovechador(@RequestBody AsignacionTarifaRequest request) {
-        try {
-            int cantidad = asignacionService.asignarAprovechador(request);
-            return ResponseEntity.ok(Map.of(
-                "mensaje", "Asignación exitosa",
-                "registrosActualizados", cantidad
-            ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "Ocurrió un error inesperado al asignar."));
-        }
+        int cantidad = asignacionService.asignarAprovechador(request);
+        return ResponseEntity.ok(Map.of(
+            "mensaje", "Asignación exitosa",
+            "registrosActualizados", cantidad
+        ));
     }
     
     @GetMapping
