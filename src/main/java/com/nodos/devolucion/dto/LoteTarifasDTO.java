@@ -15,14 +15,14 @@ public class LoteTarifasDTO {
     private Long totalAsignadas;
     private Long pendientes;
 
-    // Constructor que hace match exacto con el SELECT del Repositorio
-    public LoteTarifasDTO(String jobId, Integer mes, Integer anio, String novedad, Long totalTarifas, Long totalAsignadas, Long pendientes) {
+    // Constructor que hace match exacto con el SELECT del Repositorio (pendientes se deriva)
+    public LoteTarifasDTO(String jobId, Integer mes, Integer anio, String novedad, Long totalTarifas, Long totalAsignadas) {
         this.jobId = jobId;
         this.mes = mes;
         this.anio = anio;
         this.novedad = novedad;
         this.totalTarifas = totalTarifas != null ? totalTarifas : 0L;
         this.totalAsignadas = totalAsignadas != null ? totalAsignadas : 0L;
-        this.pendientes = pendientes != null ? pendientes : 0L;
+        this.pendientes = this.totalTarifas - this.totalAsignadas;
     }
 }

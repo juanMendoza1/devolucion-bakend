@@ -1,8 +1,11 @@
 package com.nodos.devolucion.controller;
 
+import com.nodos.devolucion.dto.ConsolidadoMesDTO;
 import com.nodos.devolucion.dto.ParametrosConfigDTO;
 import com.nodos.devolucion.dto.ReliquidacionRequestDTO;
+import com.nodos.devolucion.entity.DevolucionMaestro;
 import com.nodos.devolucion.entity.Reliquidacion;
+import com.nodos.devolucion.repository.ReliquidacionJdbcRepository;
 import com.nodos.devolucion.repository.ReliquidacionRepository;
 import com.nodos.devolucion.service.ReliquidacionOrchestratorService;
 import lombok.RequiredArgsConstructor;
@@ -10,7 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map; // <-- Importante agregar esto
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/reliquidaciones")
@@ -18,16 +21,12 @@ import java.util.Map; // <-- Importante agregar esto
 public class ReliquidacionController {
 
     private final ReliquidacionOrchestratorService orquestadorService;
-    private final ReliquidacionRepository repository; // Inyectado para inspección parcial
+    private final ReliquidacionRepository repository; 
+    private final ReliquidacionJdbcRepository reliquidacionJdbcRepository;
 
     @PostMapping("/calcular")
     public ResponseEntity<?> calcular(@RequestBody ReliquidacionRequestDTO request) {
-        if (request.isEsDemo()) {
-            return ResponseEntity.ok(orquestadorService.procesarReliquidacion(request));
-        } else {
-            orquestadorService.procesarReliquidacionAsync(request);
-            return ResponseEntity.accepted().body(Map.of("mensaje", "Proceso encolado en segundo plano."));
-        }
+        return ResponseEntity.ok(orquestadorService.procesarReliquidacion(request));
     }
     
     @GetMapping("/parametros")
@@ -36,12 +35,40 @@ public class ReliquidacionController {
         return ResponseEntity.ok(parametros);
     }
 
-    // --- NUEVO ENDPOINT: Inspección al vuelo para el Frontend (Modo Producción) ---
     @GetMapping("/parcial/{consolidadoTarifas}")
     public ResponseEntity<List<Reliquidacion>> obtenerResultadosParciales(@PathVariable String consolidadoTarifas) {
-        // Traemos una muestra rápida (ej: los últimos 50 registros guardados) 
-        // para que la tabla auditoría muestre cómo va el cálculo en tiempo real
+
         List<Reliquidacion> parciales = repository.findTop50ByConsolidadoTarifasOrderByIdDesc(consolidadoTarifas);
         return ResponseEntity.ok(parciales);
     }
+    
+    @GetMapping("/consolidados")
+    public ResponseEntity<List<DevolucionMaestro>> obtenerConsolidados() {
+        List<DevolucionMaestro> consolidados = orquestadorService.obtenerConsolidados();
+        return ResponseEntity.ok(consolidados);
+    }
+    
+    /** Recalcula los totales de un maestro desde sus reliquidaciones (capital = devolucion del primer periodo). */
+    @PostMapping("/consolidados/{id}/recalcular")
+    public ResponseEntity<DevolucionMaestro> recalcularTotales(@PathVariable Long id) {
+        return ResponseEntity.ok(orquestadorService.recalcularTotalesMaestro(id));
+    }
+
+    @GetMapping("/consolidados/{id}/detalle-mensual")
+    public ResponseEntity<List<ConsolidadoMesDTO>> obtenerDetalleMensual(@PathVariable Long id) {
+        List<ConsolidadoMesDTO> detalle = repository.obtenerDetalleMensualPorMaestro(id);
+        return ResponseEntity.ok(detalle);
+    }
+    
+    @GetMapping("/historial/{codigoDataease}")
+    public ResponseEntity<List<com.nodos.devolucion.dto.HistorialCodigoDTO>> obtenerHistorialUsuario(@PathVariable String codigoDataease) {
+        List<com.nodos.devolucion.dto.HistorialCodigoDTO> historial = repository.obtenerHistorialPorCodigo(codigoDataease);
+        return ResponseEntity.ok(historial);
+    }
+    
+    @GetMapping("/maestro/{id}/desglose")
+    public ResponseEntity<List<Map<String, Object>>> obtenerDesgloseMensual(@PathVariable Long id) {
+        return ResponseEntity.ok(reliquidacionJdbcRepository.desgloseMensual(id));
+    }
+
 }

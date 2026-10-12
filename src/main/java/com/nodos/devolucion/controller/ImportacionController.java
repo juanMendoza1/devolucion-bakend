@@ -49,12 +49,12 @@ public class ImportacionController {
 
         String jobId = UUID.randomUUID().toString();
 
-        // 1. CREAR ARCHIVO TEMPORAL PROPIO (En el hilo principal)
+        // 1. CREAR ARCHIVO TEMPORAL PROPIO
         File tempFile;
         try {
             Path tempPath = Files.createTempFile("import_" + jobId, ".csv");
             tempFile = tempPath.toFile();
-            file.transferTo(tempFile); // Transferimos los bytes antes de que Tomcat borre el original
+            file.transferTo(tempFile); 
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Error al procesar el archivo temporal: " + e.getMessage()));
         }
@@ -62,7 +62,11 @@ public class ImportacionController {
         // 2. PROCESAMIENTO ASÍNCRONO
         CompletableFuture.runAsync(() -> {
             try {
-                // Pasamos nuestro tempFile en lugar del MultipartFile
+                // 🔥 SOLUCIÓN A LA CONDICIÓN DE CARRERA:
+                // Le damos 1.5 segundos al Frontend para que establezca la conexión WebSocket
+                // antes de empezar a procesar y emitir mensajes.
+                Thread.sleep(1500);
+                
                 strategy.procesarArchivo(tempFile, jobId, usuIdRegistro, novedad, version); 
             } catch (Exception e) {
                 messagingTemplate.convertAndSend(
@@ -71,7 +75,7 @@ public class ImportacionController {
                 );
                 e.printStackTrace();
             } finally {
-                // 3. LIMPIEZA OBLIGATORIA (Se ejecuta falle o sea exitoso)
+                // 3. LIMPIEZA OBLIGATORIA
                 if (tempFile.exists()) {
                     tempFile.delete();
                 }

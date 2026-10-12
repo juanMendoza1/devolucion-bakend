@@ -16,4 +16,9 @@ public class AuditoriaDTO {
     private String aprovechadorNit;
     private String aprovechadorNombre;
     private String detallesAdicionales;
+    private String accion;
+    private String jobId;
+    private String novedad;
+    private Integer mes;
+    private Integer anio;
 }

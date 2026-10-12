@@ -3,6 +3,7 @@ package com.nodos.devolucion.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -27,6 +28,22 @@ public class GlobalExceptionHandler {
         log.warn("Intento de login fallido (401): Credenciales incorrectas");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Map.of("error", "Usuario o contraseña incorrectos."));
+    }
+
+    // 2b. Usuario autenticado pero sin permisos (HTTP 403)
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException ex) {
+        log.warn("Acceso denegado (403): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("error", "No tiene permisos para realizar esta operación."));
+    }
+
+    // 2c. Fallo controlado de un proceso (ej. una tarifa de la reliquidación). El mensaje es seguro de mostrar.
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalState(IllegalStateException ex) {
+        log.error("Fallo de proceso: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", ex.getMessage()));
     }
 
     // 3. Maneja cualquier otro error inesperado (HTTP 500)

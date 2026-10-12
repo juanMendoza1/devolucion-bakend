@@ -8,6 +8,9 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/facturas")
 public class FacturaOriginalController {
@@ -18,25 +21,22 @@ public class FacturaOriginalController {
         this.repository = repository;
     }
 
+    @GetMapping("/periodos")
+    public ResponseEntity<List<Map<String, Integer>>> obtenerPeriodos() {
+        return ResponseEntity.ok(repository.findDistinctPeriodos());
+    }
+
     @GetMapping
     public ResponseEntity<Page<FacturaOriginal>> obtenerFacturas(
             @PageableDefault(page = 0, size = 10) Pageable pageable,
-            @RequestParam(required = false) String jobId,
             @RequestParam(required = false) String factura,
-            @RequestParam(required = false) String codigoDataease) {
+            @RequestParam(required = false) String codigoDataease,
+            @RequestParam(required = false) Integer mes,
+            @RequestParam(required = false) Integer anio) {
+        String paramFactura = (factura != null && !factura.isBlank()) ? factura : "";
+        String paramCodigo = (codigoDataease != null && !codigoDataease.isBlank()) ? codigoDataease : "";
 
-        Page<FacturaOriginal> resultado;
-
-        if (jobId != null && !jobId.isBlank()) {
-            resultado = repository.findByJobId(jobId, pageable);
-        } else if (factura != null && !factura.isBlank()) {
-            resultado = repository.findByFacturaContainingIgnoreCase(factura, pageable);
-        } else if (codigoDataease != null && !codigoDataease.isBlank()) {
-            resultado = repository.findByCodigoDataeaseContainingIgnoreCase(codigoDataease, pageable);
-        } else {
-            resultado = repository.findAll(pageable);
-        }
-
+        Page<FacturaOriginal> resultado = repository.buscarConFiltros(paramFactura, paramCodigo, mes, anio, pageable);
         return ResponseEntity.ok(resultado);
     }
 }

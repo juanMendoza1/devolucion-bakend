@@ -33,6 +33,11 @@ public class TarifaAsignacionController {
         ));
     }
     
+    @PostMapping("/retirar-aprovechador")
+    public ResponseEntity<?> retirarAprovechador(@RequestBody AsignacionTarifaRequest request) {
+        return ResponseEntity.ok(asignacionService.retirarAprovechador(request));
+    }
+
     @GetMapping
     public ResponseEntity<org.springframework.data.domain.Page<com.nodos.devolucion.entity.DevolTarifas>> obtenerTarifas(
             @RequestParam(defaultValue = "0") int page,
@@ -74,5 +79,25 @@ public class TarifaAsignacionController {
     @PostMapping("/asignar-lote-completo")
     public ResponseEntity<?> asignarLoteCompleto(@RequestBody AsignacionGlobalDTO dto) {
         return ResponseEntity.ok(asignacionService.asignarLoteCompleto(dto));
+    }
+    
+    @DeleteMapping("/reset-factory")
+    public ResponseEntity<?> resetDeFabrica() {
+        asignacionService.resetDeFabrica();
+        return ResponseEntity.ok(Map.of(
+            "mensaje", "Sistema reseteado correctamente. Facturas originales conservadas."
+        ));
+    }
+    
+    @GetMapping("/historico-asignaciones")
+    public ResponseEntity<List<com.nodos.devolucion.dto.AsignacionResumenDTO>> obtenerResumenAsignaciones() {
+        return ResponseEntity.ok(asignacionService.obtenerResumenAsignaciones());
+    }
+
+    @GetMapping("/historico-asignaciones/detalle")
+    public ResponseEntity<List<com.nodos.devolucion.dto.TarifaAsignadaDTO>> obtenerDetalleAsignacion(
+            @RequestParam String jobId,
+            @RequestParam Long aprovechadorId) {
+        return ResponseEntity.ok(asignacionService.obtenerDetalleAsignacion(jobId, aprovechadorId));
     }
 }

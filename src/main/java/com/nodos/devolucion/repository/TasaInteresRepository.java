@@ -10,5 +10,9 @@ import java.util.List;
 @Repository
 public interface TasaInteresRepository extends JpaRepository<TasaInteres, Long> {
     @Query("SELECT t FROM TasaInteres t WHERE CONCAT(t.ano, '-', t.mes) IN :periodos")
-    List<TasaInteres> buscarPorPeriodos(@Param("periodos") List<String> periodos);
+    List<TasaInteres> buscarPorPeriodos(@Param("periodos") List<String> periodos);    
+
+    boolean existsByMesAndAno(Integer mes, Integer ano);   
+
+    boolean existsByMesAndAnoAndIdNot(Integer mes, Integer ano, Long id);
 }

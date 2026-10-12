@@ -5,6 +5,8 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 @Entity
 @Table(name = "reliquidaciones")
 @Getter
@@ -39,6 +41,7 @@ public class Reliquidacion {
     @JoinColumn(name = "aprovechador_id")
     private Aprovechador aprovechador;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tarifa_aplicada_id")
     private DevolTarifas tarifaAplicada;
@@ -82,4 +85,25 @@ public class Reliquidacion {
     // --- Trazabilidad del Kardex ---
     @Column(name = "detalle_tasas", length = 1000)
     private String detalleTasas; // Guarda la tasa aplicada o el motivo de rechazo
+    
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "devolucion_maestro_id")
+    private DevolucionMaestro devolucionMaestro;
+    
+ // --- NUEVOS CAMPOS DE LA TARIFA ORIGINAL ---
+    @Column(name = "aplicado", precision = 15, scale = 2)
+    private BigDecimal aplicado;
+
+    @Column(name = "ajustado", precision = 15, scale = 2)
+    private BigDecimal ajustado;
+
+    @Column(name = "devolucion", precision = 15, scale = 2)
+    private BigDecimal devolucion;
+
+    @Column(name = "porsubcon", precision = 15, scale = 2)
+    private BigDecimal porsubcon;
+
+    @Column(name = "subcon", precision = 15, scale = 2)
+    private BigDecimal subcon;
 }

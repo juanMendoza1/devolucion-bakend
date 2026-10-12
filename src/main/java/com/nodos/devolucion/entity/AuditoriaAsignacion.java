@@ -34,4 +34,18 @@ public class AuditoriaAsignacion {
 
     @Column(name = "detalles_adicionales")
     private String detallesAdicionales; // Opcional: Para guardar notas o el JobId
+
+    /** ASIGNAR o RETIRAR */
+    @Column(name = "accion", length = 20)
+    private String accion;
+
+    /** Lote (importación) al que pertenecen las tarifas afectadas. Null si la operación abarcó varios lotes. */
+    @Column(name = "job_id")
+    private String jobId;
+
+    @Column(name = "mes")
+    private Integer mes;
+
+    @Column(name = "anio")
+    private Integer anio;
 }

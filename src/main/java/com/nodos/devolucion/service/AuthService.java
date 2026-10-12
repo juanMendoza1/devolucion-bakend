@@ -45,7 +45,6 @@ public class AuthService {
     }
 
     public AuthResponse authenticate(AuthRequest request) {
-        // 1. El AuthenticationManager de Spring verifica que el login y clave coincidan
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.login(),

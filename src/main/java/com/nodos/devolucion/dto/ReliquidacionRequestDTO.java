@@ -6,15 +6,19 @@ import java.util.Map;
 
 @Data
 public class ReliquidacionRequestDTO {
-    
-    // --- NUEVOS CAMPOS PARA EL CONSOLIDADO MULTI-LOTE ---
-    private String consolidadoTarifas; // Nombre de la campaña, Ej: "Consolidado Semestre B"
-    private List<String> jobIds;       // Ahora es una lista para recibir varios lotes
 
-    // --- CAMPOS EXISTENTES QUE MANTENEMOS INTACTOS ---
-    private String concepto; // "TA", "TRT"
-    private String tipoInteres; // "NINGUNO", "SIMPLE", "COMPUESTO"
-    private boolean esDemo;   
+    private String nombreDevolucion;
+    private boolean esDemo;
+    private List<String> codigosPrueba;      
+    private List<String> tarifasAProcesar;   
+    private List<TarifaConfigDTO> tarifasConfig;
 
-    private List<Map<String, Integer>> periodosOrdenados; 
+    @Data
+    public static class TarifaConfigDTO {
+        private String jobId;
+        private String nombreVisible;
+        private String concepto;
+        private String tipoInteres;
+        private List<Map<String, Integer>> periodosOrdenados;
+    }
 }
