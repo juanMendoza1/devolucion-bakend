@@ -31,3 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Binarios de compilación del IDE ###
+/bin/
+
+### Configuración local / secretos ###
+.env
+.env.*
+!.env.example
