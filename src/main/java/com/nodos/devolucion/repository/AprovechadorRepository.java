@@ -9,5 +9,11 @@ import java.util.List;
 @Repository
 public interface AprovechadorRepository extends JpaRepository<Aprovechador, Long> {
     // Para listar en el frontend solo los que están activos y poder asignarlos
-    List<Aprovechador> findByEstadoTrue();
+    List<Aprovechador> findByEstadoTrueOrderByNombreRazonSocialAsc();
+
+    List<Aprovechador> findAllByOrderByIdAsc();
+
+    boolean existsByNit(String nit);
+
+    boolean existsByNitAndIdNot(String nit, Long id);
 }

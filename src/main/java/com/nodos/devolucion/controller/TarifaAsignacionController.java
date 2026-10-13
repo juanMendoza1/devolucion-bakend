@@ -18,11 +18,7 @@ public class TarifaAsignacionController {
 
     private final TarifaAsignacionService asignacionService;
 
-    // Endpoint 1: Para llenar la lista desplegable en tu Frontend
-    @GetMapping("/aprovechadores/activos")
-    public ResponseEntity<List<Aprovechador>> listarAprovechadoresActivos() {
-        return ResponseEntity.ok(asignacionService.obtenerAprovechadoresActivos());
-    }
+    // La lista de aprovechadores para asignar ahora está en GET /api/aprovechadores?soloActivos=true
 
     @PostMapping("/asignar-aprovechador")
     public ResponseEntity<?> asignarAprovechador(@RequestBody AsignacionTarifaRequest request) {
@@ -81,6 +77,11 @@ public class TarifaAsignacionController {
         return ResponseEntity.ok(asignacionService.asignarLoteCompleto(dto));
     }
     
+    @DeleteMapping("/lote/{jobId}")
+    public ResponseEntity<?> eliminarLote(@PathVariable String jobId) {
+        return ResponseEntity.ok(asignacionService.eliminarLote(jobId));
+    }
+
     @DeleteMapping("/reset-factory")
     public ResponseEntity<?> resetDeFabrica() {
         asignacionService.resetDeFabrica();

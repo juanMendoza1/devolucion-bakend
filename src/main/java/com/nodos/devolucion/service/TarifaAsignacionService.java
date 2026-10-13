@@ -42,11 +42,6 @@ public class TarifaAsignacionService {
     private final VersionTarifaRepository versionTarifaRepository;
     private final JdbcTemplate jdbcTemplate;
 
-    @Transactional(readOnly = true)
-    public List<Aprovechador> obtenerAprovechadoresActivos() {
-        return aprovechadorRepository.findByEstadoTrue();
-    }
-
     @Transactional
     public int asignarAprovechador(AsignacionTarifaRequest request) {
         return asignarAprovechadorConAuditoria(request, "Asignación desde panel Maestro-Detalle");
@@ -96,7 +91,7 @@ public class TarifaAsignacionService {
             todosLosIds
         );
 
-        int cantidad = asignarAprovechadorConAuditoria(asignacionNormal, "Lote completo: " + nombreImportacion);
+        int cantidad = asignarAprovechadorConAuditoria(asignacionNormal, "Tarifa completa: " + nombreImportacion);
 
         return Map.of(
             "mensaje", "Asignación masiva exitosa",
@@ -206,6 +201,51 @@ public class TarifaAsignacionService {
         jdbcTemplate.execute("TRUNCATE TABLE reliquidaciones, devolucion_maestro_tarifas, devolucion_maestro, " +
                 "tarifa_aprovechador, auditoria_asignacion, versiones_tarifas, devol_tarifas");
         log.info("Reset de fábrica completado con éxito.");
+    }
+
+    /**
+     * Elimina un lote de tarifas (una importación) mientras no esté en uso:
+     * - Sin vínculos ACTIVOS con aprovechadores.
+     * - No usado en ninguna devolución (ni bitácora ni reliquidaciones).
+     * Los vínculos ya retirados del lote se borran con él; los eventos de auditoria_asignacion se conservan.
+     * La auditoría de la importación queda marcada como ELIMINADO (no se borra) para mantener la trazabilidad.
+     */
+    @Transactional
+    public Map<String, Object> eliminarLote(String jobId) {
+        Integer tarifas = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM devol_tarifas WHERE job_id = ?", Integer.class, jobId);
+        if (tarifas == null || tarifas == 0) {
+            throw new IllegalArgumentException("La tarifa no existe o ya fue eliminada.");
+        }
+
+        Integer asignadas = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM tarifa_aprovechador ta JOIN devol_tarifas t ON t.id = ta.tarifa_id " +
+                "WHERE t.job_id = ? AND ta.activo", Integer.class, jobId);
+        if (asignadas != null && asignadas > 0) {
+            throw new IllegalArgumentException("No se puede eliminar: la tarifa tiene " + asignadas +
+                    " asignaciones activas con aprovechadores. Retírelas primero.");
+        }
+
+        Boolean usadoEnDevolucion = jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM devolucion_maestro_tarifas WHERE job_id = ?) " +
+                "    OR EXISTS (SELECT 1 FROM reliquidaciones WHERE job_id = ?)", Boolean.class, jobId, jobId);
+        if (Boolean.TRUE.equals(usadoEnDevolucion)) {
+            throw new IllegalArgumentException("No se puede eliminar: la tarifa ya fue usada en una devolución.");
+        }
+
+        String usuario = obtenerUsuarioActual();
+        int retirados = jdbcTemplate.update(
+                "DELETE FROM tarifa_aprovechador WHERE tarifa_id IN (SELECT id FROM devol_tarifas WHERE job_id = ?)", jobId);
+        int borradas = jdbcTemplate.update("DELETE FROM devol_tarifas WHERE job_id = ?", jobId);
+        jdbcTemplate.update("DELETE FROM versiones_tarifas WHERE job_id = ?", jobId);
+        jdbcTemplate.update(
+                "UPDATE auditoria_importacion SET estado = 'ELIMINADO', " +
+                "mensaje_error = COALESCE(mensaje_error || ' | ', '') || ? WHERE job_id = ?",
+                "Tarifa eliminada por " + usuario + " el " + LocalDateTime.now().withNano(0), jobId);
+
+        log.warn("Lote de tarifas {} eliminado por '{}': {} tarifas, {} vínculos retirados borrados.",
+                jobId, usuario, borradas, retirados);
+        return Map.of("mensaje", "Tarifa eliminada", "tarifasEliminadas", borradas);
     }
 
     @Transactional(readOnly = true)
