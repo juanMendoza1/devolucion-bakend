@@ -61,9 +61,8 @@ public class ReliquidacionController {
     }
     
     @GetMapping("/historial/{codigoDataease}")
-    public ResponseEntity<List<com.nodos.devolucion.dto.HistorialCodigoDTO>> obtenerHistorialUsuario(@PathVariable String codigoDataease) {
-        List<com.nodos.devolucion.dto.HistorialCodigoDTO> historial = repository.obtenerHistorialPorCodigo(codigoDataease);
-        return ResponseEntity.ok(historial);
+    public ResponseEntity<List<Map<String, Object>>> obtenerHistorialUsuario(@PathVariable String codigoDataease) {
+        return ResponseEntity.ok(reliquidacionJdbcRepository.historialPorCodigo(codigoDataease));
     }
     
     @GetMapping("/maestro/{id}/desglose")

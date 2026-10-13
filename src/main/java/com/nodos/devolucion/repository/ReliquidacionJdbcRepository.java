@@ -121,6 +121,65 @@ public class ReliquidacionJdbcRepository {
         }, maestroId, maestroId);
     }
 
+    /**
+     * Actualiza las estadísticas del planificador de PostgreSQL sobre reliquidaciones.
+     * Imprescindible después de cada carga masiva del procedimiento: si la tabla venía vacía (p. ej. tras un
+     * reset) y no se analiza, el planificador cree que tiene 0 filas y escoge planes de bucle anidado que
+     * convierten el resumen (1-2 s) en horas.
+     */
+    public void actualizarEstadisticas() {
+        jdbcTemplate.execute("ANALYZE reliquidaciones");
+    }
+
+    /** Nombre de la devolución que ya liquidó (COMPLETADO) esta tarifa, si existe. Una tarifa solo se liquida una vez. */
+    public java.util.Optional<String> devolucionQueLiquidoTarifa(String jobId) {
+        return jdbcTemplate.queryForList(
+                "SELECT m.nombre_devolucion FROM devolucion_maestro_tarifas t " +
+                "JOIN devolucion_maestro m ON m.id = t.devolucion_maestro_id " +
+                "WHERE t.job_id = ? AND t.estado = 'COMPLETADO' LIMIT 1", String.class, jobId)
+                .stream().findFirst();
+    }
+
+    /**
+     * Historial de devoluciones aplicadas a un código Dataease, mes a mes, para el visor.
+     * "pagada" indica si el usuario facturó y pagó ese mes (null = no facturó ese mes).
+     */
+    public List<Map<String, Object>> historialPorCodigo(String codigoDataease) {
+        return jdbcTemplate.query(
+                "SELECT m.id AS maestro_id, m.nombre_devolucion, m.fecha_calculo, " +
+                "       COALESCE(t.nombre_tarifa, r.job_id) AS nombre_tarifa, r.job_id, r.concepto, r.tipo_interes, " +
+                "       r.mes_base, r.anio_base, r.desocupado_mes_base, r.factura, r.detalle_tasas, " +
+                "       r.valor_base_tarifa, r.capital_reliquidado, r.intereses_calculados, r.total_devolucion, " +
+                "       CASE WHEN f.id IS NULL THEN NULL ELSE f.pagada END AS pagada " +
+                "FROM reliquidaciones r " +
+                "JOIN devolucion_maestro m ON m.id = r.devolucion_maestro_id " +
+                "LEFT JOIN devolucion_maestro_tarifas t ON t.devolucion_maestro_id = m.id AND t.job_id = r.job_id " +
+                "LEFT JOIN factura_original f ON f.id = r.factura_original_id AND f.mes = r.mes_base AND f.ano = r.anio_base " +
+                "WHERE r.codigo_dataease = ? " +
+                "ORDER BY m.fecha_calculo DESC, nombre_tarifa, r.anio_base, r.mes_base",
+                (rs, i) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("maestroId", rs.getLong("maestro_id"));
+                    m.put("nombreDevolucion", rs.getString("nombre_devolucion"));
+                    m.put("fechaCalculo", rs.getTimestamp("fecha_calculo"));
+                    m.put("nombreTarifa", rs.getString("nombre_tarifa"));
+                    m.put("jobId", rs.getString("job_id"));
+                    m.put("concepto", rs.getString("concepto"));
+                    m.put("tipoInteres", rs.getString("tipo_interes"));
+                    m.put("mes", rs.getInt("mes_base"));
+                    m.put("anio", rs.getInt("anio_base"));
+                    m.put("desocupadoMesBase", rs.getObject("desocupado_mes_base"));
+                    m.put("factura", rs.getString("factura"));
+                    m.put("tasa", rs.getString("detalle_tasas"));
+                    m.put("valorBaseTarifa", rs.getBigDecimal("valor_base_tarifa"));
+                    m.put("capital", rs.getBigDecimal("capital_reliquidado"));
+                    m.put("intereses", rs.getBigDecimal("intereses_calculados"));
+                    m.put("total", rs.getBigDecimal("total_devolucion"));
+                    m.put("pagada", rs.getObject("pagada"));
+                    return m;
+                }, codigoDataease);
+    }
+
     /** Busca el id de un maestro por nombre; si no existe lo inserta (usado dentro de la transacción del simulador). */
     public Long obtenerOCrearMaestroId(String nombreDevolucion, String usuario) {
         List<Long> ids = jdbcTemplate.queryForList(

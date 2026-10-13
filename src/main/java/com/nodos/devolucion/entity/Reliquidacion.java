@@ -82,7 +82,7 @@ public class Reliquidacion {
     @Column(name = "fecha_calculo")
     private LocalDateTime fechaCalculo;
 
-    // --- Trazabilidad del Kardex ---
+    // --- Trazabilidad del cálculo ---
     @Column(name = "detalle_tasas", length = 1000)
     private String detalleTasas; // Guarda la tasa aplicada o el motivo de rechazo
     

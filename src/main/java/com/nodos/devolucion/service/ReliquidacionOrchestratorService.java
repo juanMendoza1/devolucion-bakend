@@ -48,6 +48,9 @@ public class ReliquidacionOrchestratorService {
     /** Máximo de filas que se devuelven al frontend por tarifa (la tabla completa puede tener millones). */
     private static final int LIMITE_FILAS_UI = 500;
 
+    /** Mensaje de avance sin porcentaje (el frontend solo actualiza el texto). */
+    private static final int SIN_PORCENTAJE = -1;
+
     /**
      * Procesa las tarifas solicitadas. Devuelve { resultados, resumen }.
      * - Simulador (esDemo): todo corre en una transacción que termina en ROLLBACK; no queda nada guardado
@@ -102,7 +105,7 @@ public class ReliquidacionOrchestratorService {
         for (int i = 0; i < total; i++) {
             ReliquidacionRequestDTO.TarifaConfigDTO config = configuraciones.get(i);
             String nombreTarifaUi = "Tarifa " + (i + 1) + " de " + total + " (" + config.getNombreVisible() + ")";
-            notificar(request, 50, "⚡ Ejecutando simulación para " + nombreTarifaUi + "...");
+            notificar(request, SIN_PORCENTAJE, "Simulando " + nombreTarifaUi + "...");
 
             Map<String, Object> salida = tx.execute(status -> {
                 // Todo lo que pase aquí se deshace al final (setRollbackOnly)
@@ -132,7 +135,7 @@ public class ReliquidacionOrchestratorService {
             Map<String, Object> resumen = (Map<String, Object>) salida.get("resumen");
             resumenFinal = resumen;
 
-            notificar(request, 100, "✅ " + nombreTarifaUi + " simulada (sin guardar).");
+            notificar(request, 100, nombreTarifaUi + " simulada (sin guardar).");
         }
 
         return Map.of("resultados", resultadosGlobales, "resumen", resumenFinal);
@@ -144,6 +147,14 @@ public class ReliquidacionOrchestratorService {
 
     private Map<String, Object> procesarProduccion(ReliquidacionRequestDTO request,
                                                    List<ReliquidacionRequestDTO.TarifaConfigDTO> configuraciones) {
+        // Una tarifa solo se liquida una vez: si ya está COMPLETADA en cualquier devolución, no se reprocesa.
+        for (ReliquidacionRequestDTO.TarifaConfigDTO config : configuraciones) {
+            reliquidacionJdbcRepository.devolucionQueLiquidoTarifa(config.getJobId()).ifPresent(nombre -> {
+                throw new IllegalArgumentException("La tarifa '" + config.getNombreVisible()
+                        + "' ya fue liquidada en la devolución '" + nombre + "'. No se puede procesar nuevamente.");
+            });
+        }
+
         DevolucionMaestro maestro = obtenerOCrearMaestro(request.getNombreDevolucion());
 
         List<ReliquidacionResultadoDTO> resultadosGlobales = new ArrayList<>();
@@ -164,43 +175,44 @@ public class ReliquidacionOrchestratorService {
                             .registrosProcesados(0)
                             .build()));
 
-            if ("COMPLETADO".equals(bitacora.getEstado())) {
-                log.info("⏭️ Saltando {}. Ya estaba COMPLETADA.", nombreTarifaUi);
-                notificar(request, 100, "⏭️ Omitiendo " + nombreTarifaUi + " (Ya completada)");
-            } else {
-                try {
-                    bitacora.setEstado("PROCESANDO");
-                    bitacora.setMensajeError(null);
-                    maestroTarifaRepository.save(bitacora);
+            Map<String, Object> resumenTarifa;
+            try {
+                bitacora.setEstado("PROCESANDO");
+                bitacora.setMensajeError(null);
+                maestroTarifaRepository.save(bitacora);
 
-                    notificar(request, 50, "⚡ Procesando motor en Base de Datos para " + nombreTarifaUi + "...");
+                // Mensajes sin porcentaje: el cálculo corre en una sola sentencia y no reporta avance intermedio
+                notificar(request, SIN_PORCENTAJE, "Calculando " + nombreTarifaUi + "...");
 
-                    // El procedimiento borra las filas previas de (maestro, job) antes de insertar
-                    ReliquidacionConceptoStrategy estrategia = motorFactory.obtenerEstrategia(config.getConcepto());
-                    estrategia.calcularDevolucion(request.getNombreDevolucion(), config, false, List.of(), maestro);
+                // El procedimiento borra las filas previas de (maestro, job) antes de insertar
+                ReliquidacionConceptoStrategy estrategia = motorFactory.obtenerEstrategia(config.getConcepto());
+                estrategia.calcularDevolucion(request.getNombreDevolucion(), config, false, List.of(), maestro);
 
-                    Map<String, Object> resumenTarifa = reliquidacionJdbcRepository.resumenTarifa(maestro.getId(), config.getJobId());
-                    bitacora.setEstado("COMPLETADO");
-                    bitacora.setRegistrosProcesados(((Number) resumenTarifa.get("usuarios")).intValue());
-                    maestroTarifaRepository.save(bitacora);
+                // Estadísticas al día antes de resumir: evita planes de horas tras cargas masivas
+                notificar(request, SIN_PORCENTAJE, "Consolidando resultados de " + nombreTarifaUi + "...");
+                reliquidacionJdbcRepository.actualizarEstadisticas();
 
-                    recalcularTotalesMaestro(maestro);
+                resumenTarifa = reliquidacionJdbcRepository.resumenTarifa(maestro.getId(), config.getJobId());
+                bitacora.setEstado("COMPLETADO");
+                bitacora.setRegistrosProcesados(((Number) resumenTarifa.get("usuarios")).intValue());
+                maestroTarifaRepository.save(bitacora);
 
-                    notificar(request, 100, "✅ " + nombreTarifaUi + " procesada con éxito.");
-                } catch (Exception e) {
-                    log.error("❌ Error procesando {}: {}", nombreTarifaUi, e.getMessage());
-                    bitacora.setEstado("ERROR");
-                    String errorMsg = e.getMessage() != null ? e.getMessage() : "Error interno desconocido";
-                    bitacora.setMensajeError(errorMsg.substring(0, Math.min(errorMsg.length(), 500)));
-                    maestroTarifaRepository.save(bitacora);
-                    throw new IllegalStateException("Fallo en " + nombreTarifaUi + ": " + errorMsg, e);
-                }
+                recalcularTotalesMaestro(maestro);
+
+                notificar(request, 100, nombreTarifaUi + " procesada.");
+            } catch (Exception e) {
+                log.error("Error procesando {}: {}", nombreTarifaUi, e.getMessage());
+                bitacora.setEstado("ERROR");
+                String errorMsg = e.getMessage() != null ? e.getMessage() : "Error interno desconocido";
+                bitacora.setMensajeError(errorMsg.substring(0, Math.min(errorMsg.length(), 500)));
+                maestroTarifaRepository.save(bitacora);
+                throw new IllegalStateException("Fallo en " + nombreTarifaUi + ": " + errorMsg, e);
             }
 
-            Map<String, Object> resumen = new LinkedHashMap<>(reliquidacionJdbcRepository.resumenTarifa(maestro.getId(), config.getJobId()));
+            Map<String, Object> resumen = new LinkedHashMap<>(resumenTarifa);
             resumen.put("nombreTarifa", config.getNombreVisible());
             resumenFinal = resumen;
-            resultadosGlobales.addAll(reliquidacionJdbcRepository.listarResultados(maestro.getId(), config.getJobId(), LIMITE_FILAS_UI));
+            // En producción solo se devuelve el resumen; el detalle se consulta en Consolidados / Visor
         }
 
         return Map.of("resultados", resultadosGlobales, "resumen", resumenFinal);
