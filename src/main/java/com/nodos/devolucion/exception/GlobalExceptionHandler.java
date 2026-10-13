@@ -38,6 +38,15 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", "No tiene permisos para realizar esta operación."));
     }
 
+    // 2b'. Parámetro con valor inválido en la URL (ej. ?modo=XX) -> 400 en lugar de 500
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, String>> handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex) {
+        log.warn("Parámetro inválido (400): {}={}", ex.getName(), ex.getValue());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", "Valor inválido para el parámetro '" + ex.getName() + "'."));
+    }
+
     // 2c. Fallo controlado de un proceso (ej. una tarifa de la reliquidación). El mensaje es seguro de mostrar.
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, String>> handleIllegalState(IllegalStateException ex) {

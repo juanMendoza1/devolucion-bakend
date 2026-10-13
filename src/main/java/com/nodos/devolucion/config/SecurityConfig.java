@@ -1,6 +1,7 @@
 package com.nodos.devolucion.config;
 
 import com.nodos.devolucion.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,6 +47,9 @@ public class SecurityConfig {
             
             // Configuramos los permisos de las rutas
             .authorizeHttpRequests(auth -> auth
+                // Despachos internos del servidor: la petición original ya pasó por el filtro JWT.
+                // ASYNC lo usan las descargas en streaming (reportes Excel); ERROR, las páginas de error.
+                .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                 // Solo el login es público. El registro de usuarios queda para el administrador.
                 .requestMatchers("/api/auth/login").permitAll()
                 .requestMatchers("/api/auth/register").hasAuthority(ROL_ADMIN)
